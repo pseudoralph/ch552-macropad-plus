@@ -76,7 +76,7 @@ void USB_ISR(void) __interrupt(INT_NO_USB) {
 
 // Key 1 : VOL UP
 inline void KEY1_PRESSED() {
-  CON_press(CON_MEDIA_PREV);   
+  CON_press(CON_MEDIA_REWIND);   
 }
 
 inline void KEY1_RELEASED() {
@@ -97,7 +97,7 @@ inline void KEY2_HOLD() {}
 
 // Key 3 : VOL UP
 inline void KEY3_PRESSED() {
-  CON_press(CON_MEDIA_NEXT);    
+  CON_press(CON_MEDIA_FORWARD);    
 }
 
 inline void KEY3_RELEASED() {
