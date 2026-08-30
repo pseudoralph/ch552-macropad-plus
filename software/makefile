@@ -28,7 +28,7 @@ WCHISP    ?= python3 tools/chprog.py
 CFLAGS  = -mmcs51 --model-small --no-xinit-opt
 CFLAGS += --xram-size $(XRAM_SIZE) --xram-loc $(XRAM_LOC) --code-size $(CODE_SIZE)
 CFLAGS += -I$(INCLUDE) -DF_CPU=$(FREQ_SYS)
-CFILES  = $(SKETCH) $(wildcard $(INCLUDE)/*.c)
+CFILES = $(SKETCH) $(filter-out $(INCLUDE)/neo.c, $(wildcard $(INCLUDE)/*.c))
 RFILES  = $(CFILES:.c=.rel)
 CLEAN   = rm -f *.ihx *.lk *.map *.mem *.lst *.rel *.rst *.sym *.asm *.adb
 

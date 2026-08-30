@@ -50,7 +50,7 @@
 #include "src/config.h"                     // user configurations
 #include "src/system.h"                     // system functions
 #include "src/delay.h"                      // delay functions
-#include "src/neo.h"                        // NeoPixel functions
+#include "src/gpio.h"                        // GPIO pin macros (PIN_read + pin enum) — formerly pulled in via neo.h
 #include "src/usb_composite.h"              // USB HID composite functions
 
 // Prototypes for used interrupts
@@ -222,6 +222,40 @@ inline void ENC_SW_RELEASED() {
 // }
 
 // ===================================================================================
+// Rotary Encoder Quadrature Decoder (Ben Buxton full-step state table)
+// ===================================================================================
+// Row = current decoder state; column = live 2-bit pin reading (A<<1)|B, value 0..3.
+// Each cell is the NEXT state. The top bits flag a completed detent:
+//   ENC_DIR_CW (0x10) or ENC_DIR_CCW (0x20). Contact bounce wobbles between
+//   intermediate states and never reaches a FINAL cell, so it emits nothing.
+#define ENC_START      0x00
+#define ENC_CW_FINAL   0x01
+#define ENC_CW_BEGIN   0x02
+#define ENC_CW_NEXT    0x03
+#define ENC_CCW_BEGIN  0x04
+#define ENC_CCW_FINAL  0x05
+#define ENC_CCW_NEXT   0x06
+#define ENC_DIR_CW     0x10
+#define ENC_DIR_CCW    0x20
+
+const __code uint8_t ENC_TABLE[7][4] = {
+  // ENC_START
+  {ENC_START,     ENC_CW_BEGIN,  ENC_CCW_BEGIN, ENC_START},
+  // ENC_CW_FINAL
+  {ENC_CW_NEXT,   ENC_START,     ENC_CW_FINAL,  ENC_START | ENC_DIR_CW},
+  // ENC_CW_BEGIN
+  {ENC_CW_NEXT,   ENC_CW_BEGIN,  ENC_START,     ENC_START},
+  // ENC_CW_NEXT
+  {ENC_CW_NEXT,   ENC_CW_BEGIN,  ENC_CW_FINAL,  ENC_START},
+  // ENC_CCW_BEGIN
+  {ENC_CCW_NEXT,  ENC_START,     ENC_CCW_BEGIN, ENC_START},
+  // ENC_CCW_FINAL
+  {ENC_CCW_NEXT,  ENC_CCW_FINAL, ENC_START,     ENC_START | ENC_DIR_CCW},
+  // ENC_CCW_NEXT
+  {ENC_CCW_NEXT,  ENC_CCW_FINAL, ENC_CCW_BEGIN, ENC_START},
+};
+
+// ===================================================================================
 // Main Function
 // ===================================================================================
 void main(void) {
@@ -233,6 +267,7 @@ void main(void) {
   __bit key5last = 0;                             // last state of key 5
   __bit key6last = 0;                             // last state of key 6
   __bit isSwitchPressed = 0;                      // state of rotary encoder switch
+  uint8_t encState = ENC_START;                   // rotary encoder decoder state
   // __idata uint8_t i;                              // temp variable
 
   // Setup
@@ -370,32 +405,27 @@ void main(void) {
       KEY6_HOLD();                                // take proper action
     }
 
-    // Handle rotary encoder
-    // ---------------------
-    if(!PIN_read(PIN_ENC_A)) {                    // encoder turned ?
-      if(PIN_read(PIN_ENC_B)) {                   // clockwise ?
-        ENC_CW_ACTION();                          // take proper action
-        // NEO_encoder_cw();                         // rotate NeoPixels
-        DLY_ms(5);                                // debounce
-        ENC_CW_RELEASED();                        // take proper action
-      }
-      else {                                      // counter-clockwise ?
-        ENC_CCW_ACTION();                         // take proper action
-        // NEO_encoder_ccw();                        // rotate NeoPixels
-        DLY_ms(5);                                // debounce
-        ENC_CCW_RELEASED();                       // take proper action
-      }
-      while(!PIN_read(PIN_ENC_A));                // wait until next detent
-    } 
-    else {
-      if(!isSwitchPressed && !PIN_read(PIN_ENC_SW)) {     // switch previously pressed?
-        ENC_SW_PRESSED();                         // take proper action
-        isSwitchPressed = 1;
-      }
-      else if(isSwitchPressed && PIN_read(PIN_ENC_SW)) {  // switch previously released?
-        ENC_SW_RELEASED();                        // take proper action
-        isSwitchPressed = 0;                      // update switch state
-      }
+    // Handle rotary encoder (quadrature state-machine decoder)
+    // --------------------------------------------------------
+    encState = ENC_TABLE[encState & 0x0F][(PIN_read(PIN_ENC_A) << 1) | PIN_read(PIN_ENC_B)];
+    if((encState & 0x30) == ENC_DIR_CW) {         // one full detent clockwise?
+      ENC_CW_ACTION();                            // press + release = one clean tap;
+      ENC_CW_RELEASED();                          //   USB endpoint self-paces, no delay needed
+    }
+    else if((encState & 0x30) == ENC_DIR_CCW) {   // one full detent counter-clockwise?
+      ENC_CCW_ACTION();
+      ENC_CCW_RELEASED();
+    }
+
+    // Handle rotary encoder switch
+    // ----------------------------
+    if(!isSwitchPressed && !PIN_read(PIN_ENC_SW)) {      // switch newly pressed?
+      ENC_SW_PRESSED();                           // take proper action
+      isSwitchPressed = 1;
+    }
+    else if(isSwitchPressed && PIN_read(PIN_ENC_SW)) {   // switch newly released?
+      ENC_SW_RELEASED();                          // take proper action
+      isSwitchPressed = 0;                        // update switch state
     }
 
     DLY_ms(1);                                    // debounce
